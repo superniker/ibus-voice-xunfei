@@ -1,0 +1,10 @@
+{
+    "appid": "YOUR_APP_ID",
+    "api_key": "YOUR_API_KEY",
+    "api_secret": "YOUR_API_SECRET",
+    "engine": {
+        "output": "preview_paste",
+        "preview": "none",
+        "shortcut": "F8"
+    }
+}
