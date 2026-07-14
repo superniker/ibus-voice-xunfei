@@ -139,6 +139,22 @@ bash install.sh
 bash uninstall.sh
 ```
 
+## 已知不足
+
+- **依赖讯飞云端** — 需要联网，每次调用消耗讯飞 API 额度，不是离线方案
+- **GNOME Wayland 限制** — IBus 状态栏图标在 GNOME 下不显示，只显示文字（讯/录/识）
+- **无自动分段** — 录音最长 2 分钟，超时自动停止；长文本需用户手动 F8 多次
+- **Space 预编辑不清理** — Wayland 下按 Space commit 后预编辑文字视觉上不消失（已 commit 到焦点应用，但 preedit 清除不可靠）
+- **中文优化** — 讯飞 IAT 主要针对中文普通话，英文/方言识别率一般
+- **代码未重构** — 多个文件职责重叠（daemon/engine/stream 有重复的讯飞认证逻辑），适合拆分
+
+## 关于图标
+
+`icons/` 目录下有三态图标文件，IBus 引擎代码引用了它们。但在 GNOME Wayland 环境下，IBus 状态栏仅显示文字符号（讯/录/识），图标不可见。保留图标是为了：
+- 兼容其他桌面环境（KDE、XFCE 等 IBus 面板可能显示图标）
+- IBus 组件 XML 注册需要 icon 名称
+- 未来可能用作系统托盘图标
+
 ## 已测试环境
 
 - GNOME Wayland (Fedora/Ubuntu)
