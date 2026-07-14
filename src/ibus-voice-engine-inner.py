@@ -293,7 +293,7 @@ class VoiceEngine(IBus.Engine):
             # 用 zenity 弹窗显示（notify-send 可能不显示）
             import subprocess
             about_text = (
-                '讯飞语音输入法 v1.3\n\n'
+                '讯飞语音输入法 v0.1.0\n\n'
                 '功能:\n'
                 '  • 流式语音识别（边说边显示）\n'
                 '  • IBus commit_text 上屏\n'
@@ -790,7 +790,7 @@ if __name__ == '__main__':
     component = IBus.Component(
         name='org.freedesktop.IBus.VoiceInput',
         description='讯飞语音输入法',
-        version='1.2.0', license='MIT', author='Hermes',
+        version='0.1.0', license='MIT', author='superniker',
         homepage='https://github.com/superniker',
     )
     engine_desc = IBus.EngineDesc(
