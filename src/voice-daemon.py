@@ -100,6 +100,8 @@ def run_session(cfg, stop_event, results_holder):
     audio_q = queue.Queue()
     results = results_holder['results']
     results_dict = {}  # 用字典存储结果，key=序号(1-indexed)
+    # 同步写入 results_holder，stop_session 可随时读到最新状态
+    results_holder['results_dict'] = results_dict
 
     def on_message(ws, message):
         try:
@@ -136,6 +138,9 @@ def run_session(cfg, stop_event, results_holder):
         partial = ''.join(sorted_results)
         if partial:
             notify_engine_partial(partial)
+        # 检测是否为最终结果
+        if d.get('status') == 2:
+            log(f'final result received, {len(partial)} chars')
 
     def on_open(ws):
         def send_audio():
@@ -169,7 +174,11 @@ def run_session(cfg, stop_event, results_holder):
                 log('sent status:2 to iat')
             except Exception:
                 pass
-            time.sleep(3.5)
+            # 等待最终结果到达（最多 3 秒）
+            for _ in range(6):
+                time.sleep(0.5)
+                if stop_event.is_set():
+                    break
             try:
                 ws.close()
             except Exception:
@@ -199,10 +208,22 @@ def run_session(cfg, stop_event, results_holder):
             stream.stop(); stream.close()
         except Exception:
             pass
+    # 额外等一下确保 on_message 最后一次调用完成
+    time.sleep(0.5)
     final = ''.join(results)
-    # 把 results_dict 也存起来（stop_session 需要）
+    # 用字典版本（更准确）
+    if results_dict:
+        final = ''.join(results_dict[k] for k in sorted(results_dict.keys()))
     results_holder['results_dict'] = results_dict
     log(f'session ended: {len(final)} chars')
+    # 通知 engine commit（在线程结束前，确保结果完整）
+    if final.strip():
+        notify_engine_commit(final)
+    # 通知状态
+    notify_status_bar('idle')
+    notify_engine_status('idle')
+    # 标记完成
+    results_holder['done'] = True
 
 
 session_lock = threading.Lock()
@@ -250,19 +271,13 @@ def stop_session():
         log(f'stop too early ({elapsed:.1f}s), waiting')
         time.sleep(1.5 - elapsed)
     stop_event.set()
-    t.join(timeout=10)
-    time.sleep(0.3)
-    final = ''.join(results_holder['results']) if results_holder else ''
-    # 如果有 results_dict，用字典版本（更准确）
-    if results_holder and 'results_dict' in results_holder:
-        rd = results_holder['results_dict']
-        final = ''.join(rd[k] for k in sorted(rd.keys()))
+    # 等待 run_session 完成（包括 commit 通知）
+    t.join(timeout=15)
+    # 读取最终结果
+    rd = results_holder.get('results_dict', {})
+    final = ''.join(rd[k] for k in sorted(rd.keys())) if rd else ''
     write_state({'recording': False, 'started': 0, 'last_text': final})
-    notify_status_bar('processing' if final else 'idle')
-    notify_engine_status('idle')
     log(f'stopped, text: {final[:80]}')
-    if final.strip():
-        notify_engine_commit(final)
     return final
 
 
