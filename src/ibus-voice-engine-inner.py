@@ -21,7 +21,7 @@ import socket, os, json, threading, time, subprocess
 
 SOCK = '/tmp/ibus-voice.sock'
 CFG_PATH = os.path.expanduser('~/.config/ibus-voice/config.json')
-SETUP_SCRIPT = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'voice-setup.py')
+SETUP_SCRIPT = os.path.expanduser('~/.hermes/scripts/voice-setup.py')
 
 
 def _load_config():
@@ -43,21 +43,21 @@ STATES = {
     'idle': {
         'number': 0,
         'symbol': '讯',
-        'icon': os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'icons', 'ibus-voice-input.png'),
+        'icon': '/home/niker/.local/share/icons/hicolor/256x256/apps/ibus-voice-input.png',
         'label': '空闲',
         'tooltip': '点击开始录音\n快捷键: ' + SHORTCUT,
     },
     'recording': {
         'number': 1,
         'symbol': '录',
-        'icon': os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'icons', 'ibus-voice-input-recording.png'),
+        'icon': '/home/niker/.local/share/icons/hicolor/256x256/apps/ibus-voice-input-recording.png',
         'label': '录音中',
         'tooltip': '点击停止录音',
     },
     'processing': {
         'number': 2,
         'symbol': '识',
-        'icon': os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'icons', 'ibus-voice-input-processing.png'),
+        'icon': '/home/niker/.local/share/icons/hicolor/256x256/apps/ibus-voice-input-processing.png',
         'label': '识别中',
         'tooltip': '正在识别...',
     },
@@ -293,7 +293,7 @@ class VoiceEngine(IBus.Engine):
             # 用 zenity 弹窗显示（notify-send 可能不显示）
             import subprocess
             about_text = (
-                '讯飞语音输入法 v0.1.0\n\n'
+                '讯飞语音输入法 v1.3\n\n'
                 '功能:\n'
                 '  • 流式语音识别（边说边显示）\n'
                 '  • IBus commit_text 上屏\n'
@@ -444,6 +444,7 @@ class VoiceEngine(IBus.Engine):
             self._latest_text = ''
             self._committed_text = ''
             self._preview_last_text = ''
+            self._auto_committed = ''
             self._recording = True
         self._update_status('recording')
         self._start_session()
@@ -601,9 +602,39 @@ class VoiceEngine(IBus.Engine):
         return False
 
     def _do_partial_with_text(self, text):
-        """partial 同时更新 _latest_text - 让 Space commit 找到内容"""
+        """partial 同时更新 _latest_text - 让 Space commit 找到内容
+
+        长文本策略：遇到句号/问号/感叹号，把已确认的前半段先 commit，
+        preedit 只保留最后一句。这样不会超出屏幕宽度。
+        """
         with self._lock:
             self._latest_text = text
+        # 检测句子边界，自动 commit 已确认的前半段
+        import re
+        # 找最后一个句子边界（。！？!?）
+        m = None
+        for m in re.finditer(r'[。！？!?]', text):
+            pass  # 找最后一个
+        if m and m.end() < len(text):
+            # 有句子边界，且后面还有文字
+            commit_part = text[:m.end()]
+            remain_part = text[m.end():]
+            # 只 commit 比上次多出来的部分
+            already_committed = getattr(self, '_auto_committed', '')
+            if commit_part != already_committed and commit_part.startswith(already_committed):
+                new_part = commit_part[len(already_committed):]
+                if new_part:
+                    try:
+                        self.commit_text(IBus.Text.new_from_string(new_part))
+                        log(f'auto-commit sentence: {new_part[:30]}')
+                    except Exception as e:
+                        log(f'auto-commit err: {e}')
+                self._auto_committed = commit_part
+            # preedit 只显示最后一句
+            self._do_partial(remain_part)
+            with self._lock:
+                self._latest_text = remain_part
+            return False
         return self._do_partial(text)
 
     def _do_commit(self, text):
@@ -790,7 +821,7 @@ if __name__ == '__main__':
     component = IBus.Component(
         name='org.freedesktop.IBus.VoiceInput',
         description='讯飞语音输入法',
-        version='0.1.0', license='MIT', author='superniker',
+        version='1.2.0', license='MIT', author='Hermes',
         homepage='https://github.com/superniker',
     )
     engine_desc = IBus.EngineDesc(
