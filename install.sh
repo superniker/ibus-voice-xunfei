@@ -62,7 +62,7 @@ cat > "$XML_DIR/voice-input.xml" << XMLEOF
   <name>org.freedesktop.IBus.VoiceInput</name>
   <description>讯飞语音输入法</description>
   <exec>$INSTALL_DIR/ibus-voice-engine.py</exec>
-  <version>0.1.0</version>
+  <version>0.2.0</version>
   <author>superniker</author>
   <license>MIT</license>
   <homepage>https://github.com/superniker/ibus-voice-xunfei</homepage>
