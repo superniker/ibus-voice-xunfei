@@ -35,8 +35,11 @@ def notify_engine_partial(text):
         s.connect('/tmp/voice-partial.sock')
         s.sendall(js.dumps({'text': text, 'type': 'partial'}).encode() + b'\n')
         s.close()
-    except Exception:
-        pass
+    except Exception as e:
+        # 只在第一次失败时 log，避免刷屏
+        if not hasattr(notify_engine_partial, '_logged_fail'):
+            log(f'partial send fail: {e}')
+            notify_engine_partial._logged_fail = True
 
 
 def notify_engine_commit(text):
@@ -45,7 +48,9 @@ def notify_engine_commit(text):
         s = sk.socket(sk.AF_UNIX, sk.SOCK_STREAM)
         s.settimeout(0.5)
         s.connect('/tmp/voice-commit.sock')
-        s.sendall(js.dumps({'text': text, 'type': 'commit'}).encode() + b'\n')
+        payload = js.dumps({'text': text, 'type': 'commit'}).encode() + b'\n'
+        s.sendall(payload)
+        log(f'commit sent ({len(text)} chars, {len(payload)} bytes)')
         s.close()
     except Exception as e:
         log(f'notify commit fail: {e}')
@@ -162,7 +167,7 @@ def run_session(cfg, stop_event, results_holder):
                     payload['business'] = {
                         'language': 'zh_cn', 'domain': 'iat',
                         'accent': 'mandarin', 'dwa': 'wpgs',
-                        'vad_eos': 60000,
+                        'vad_eos': 10000,
                     }
                     first = False
                 try:
