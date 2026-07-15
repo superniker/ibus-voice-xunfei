@@ -14,7 +14,7 @@ import socket
 SOCK = '/tmp/ibus-voice.sock'
 
 # 找最新ibus socket
-sockets = sorted(glob.glob(os.path.expanduser('~/.cache/ibus/dbus-*'),
+sockets = sorted(glob.glob('/home/niker/.cache/ibus/dbus-*'),
                  key=os.path.getmtime, reverse=True)
 IBUS_SOCK = sockets[0] if sockets else None
 
@@ -119,6 +119,23 @@ def trigger_toggle():
 
 
 def main():
+    # 检查当前输入法是否是讯飞语音
+    try:
+        r = subprocess.run(['ibus', 'engine'], capture_output=True, text=True, timeout=2)
+        current_engine = r.stdout.strip() if r.returncode == 0 else ''
+    except Exception:
+        current_engine = ''
+
+    if 'voice' not in current_engine.lower():
+        # 当前不是讯飞语音，自动切换
+        try:
+            subprocess.run(['ibus', 'engine', 'voice-input'],
+                          capture_output=True, timeout=2)
+            import time as _t
+            _t.sleep(0.3)  # 等 IBus 切换
+        except Exception:
+            pass
+
     ensure_status_bar()
     # 录音前保存当前窗口
     win_id = save_active_window()
