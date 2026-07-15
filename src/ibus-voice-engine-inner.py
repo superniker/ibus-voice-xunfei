@@ -445,6 +445,7 @@ class VoiceEngine(IBus.Engine):
             self._committed_text = ''
             self._preview_last_text = ''
             self._auto_committed = ''
+            self._preedit_offset = 0
             self._recording = True
         self._update_status('recording')
         self._start_session()
@@ -511,10 +512,10 @@ class VoiceEngine(IBus.Engine):
                             GLib.idle_add(self._update_status, status)
                         text = msg.get('text', '')
                         if text:
-                            log(f'commit request: {text[:30]}')
+                            log(f'commit request ({len(text)} chars): {text[:50]}')
                             GLib.idle_add(self._do_commit, text)
                     except Exception as e:
-                        log(f'commit parse err: {e}')
+                        log(f'commit parse err: {e} data={data[:100]!r}')
                 client.close()
             except Exception as e:
                 log(f'handle err: {e}')
@@ -569,6 +570,7 @@ class VoiceEngine(IBus.Engine):
                         msg = js.loads(data)
                         text = msg.get('text', '')
                         if text:
+                            log(f'partial socket recv ({len(text)} chars)')
                             # 在 GLib 主线程调 update_preedit + 更新 _latest_text
                             GLib.idle_add(self._do_partial_with_text, text)
                     except Exception as e:
@@ -604,38 +606,42 @@ class VoiceEngine(IBus.Engine):
     def _do_partial_with_text(self, text):
         """partial 同时更新 _latest_text - 让 Space commit 找到内容
 
-        长文本策略：遇到句号/问号/感叹号，把已确认的前半段先 commit，
-        preedit 只保留最后一句。这样不会超出屏幕宽度。
+        长文本策略：保留最近2句作为缓冲（讯飞可能修正），
+        只把更早的已确认句子上屏。一次只推进一句。
         """
+        log(f'partial recv ({len(text)} chars)')
         with self._lock:
             self._latest_text = text
-        # 检测句子边界，自动 commit 已确认的前半段
         import re
-        # 找最后一个句子边界（。！？!?）
-        m = None
-        for m in re.finditer(r'[。！？!?]', text):
-            pass  # 找最后一个
-        if m and m.end() < len(text):
-            # 有句子边界，且后面还有文字
-            commit_part = text[:m.end()]
-            remain_part = text[m.end():]
-            # 只 commit 比上次多出来的部分
-            already_committed = getattr(self, '_auto_committed', '')
-            if commit_part != already_committed and commit_part.startswith(already_committed):
-                new_part = commit_part[len(already_committed):]
-                if new_part:
-                    try:
-                        self.commit_text(IBus.Text.new_from_string(new_part))
-                        log(f'auto-commit sentence: {new_part[:30]}')
-                    except Exception as e:
-                        log(f'auto-commit err: {e}')
-                self._auto_committed = commit_part
-            # preedit 只显示最后一句
-            self._do_partial(remain_part)
-            with self._lock:
-                self._latest_text = remain_part
-            return False
-        return self._do_partial(text)
+        # 句子边界：所有中文/英文标点
+        boundaries = []
+        for m in re.finditer(r'[。！？!?，,；;：:…、\.\?\!]', text):
+            is_terminal = m.group() in '。！？!?…'
+            boundaries.append((m.end(), is_terminal))
+        if len(boundaries) < 3:
+            return self._do_partial(text)
+        # 倒数第3个边界 = 安全上屏点（后面留2个边界做缓冲）
+        safe_point, _ = boundaries[-3]
+        # 安全点离末尾至少30字，否则不上屏
+        if len(text) - safe_point < 30:
+            return self._do_partial(text)
+        offset = getattr(self, '_preedit_offset', 0)
+        if safe_point > offset:
+            new_part = text[offset:safe_point]
+            if new_part:
+                try:
+                    self.commit_text(IBus.Text.new_from_string(new_part))
+                    log(f'auto-commit: {new_part[:40]}...')
+                except Exception as e:
+                    log(f'auto-commit err: {e}')
+            self._preedit_offset = safe_point
+        # preedit 从已上屏位置开始
+        offset = getattr(self, '_preedit_offset', 0)
+        remain = text[offset:]
+        self._do_partial(remain)
+        with self._lock:
+            self._latest_text = remain
+        return False
 
     def _do_commit(self, text):
         # 先 commit_text 到焦点应用
